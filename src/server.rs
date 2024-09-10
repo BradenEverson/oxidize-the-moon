@@ -67,12 +67,17 @@ impl Service<Request<body::Incoming>> for ServerService {
             Box::pin(async { Ok(response) })
         } else {
             // HTTP
-            let response = Response::builder().status(StatusCode::OK);
+            let mut response = Response::builder().status(StatusCode::OK);
 
             let res = match req.method() {
                 &Method::GET => {
                     let path = match req.uri().path() {
                         "/" => "frontend/index.html",
+                        "/dist/data-collection.js" => {
+                            response = response.header("Content-Type", "application/javascript");
+
+                            "frontend/dist/data-collection.js"
+                        }
                         _ => "frontend/404.html",
                     };
 
