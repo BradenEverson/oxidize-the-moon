@@ -1,11 +1,13 @@
 //! Basic Websocket Connection that can send metadata to all connected clients
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::{executor, SinkExt};
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 
+use oxidize_the_moon::data::SendableData;
 use oxidize_the_moon::server::{ServerService, WebSocketWriteStream};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -57,8 +59,12 @@ async fn main() {
 
     loop {
         streams.lock().await.iter_mut().for_each(|stream| {
-            executor::block_on(stream.send(Message::text("Todo: Send actual data")))
+            let sample_3d = SendableData::fuzz_3d_img(25);
+            let serialzed_3d = serde_json::to_string(&sample_3d).expect("Serialize to JSON");
+            executor::block_on(stream.send(Message::Text(serialzed_3d)))
                 .expect("Failed to send message to client");
         });
+
+        std::thread::sleep(Duration::from_millis(500))
     }
 }
