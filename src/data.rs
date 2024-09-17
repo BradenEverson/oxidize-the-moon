@@ -1,36 +1,28 @@
 //! Representations for what data we could send over the websocket, including power consumption, 3D
 //! camera data and Lidar
 
-use rand::{thread_rng, Rng};
+use chrono::NaiveDateTime;
+use ndarray::{Array2, IxDyn};
 use serde::{Deserialize, Serialize};
 
-/// A serialable enum for all types of data that may be sent over
+pub mod handler;
+
 #[derive(Serialize, Deserialize)]
-pub enum SendableData {
-    /// 3D camera data
-    PointCloudImage(Vec<Point3D>),
-    /// Power consumption data
-    PowerConsumption(f32),
+/// Data paired with a timestamp
+pub struct Data {
+    /// The data contained
+    pub data: HandleableData,
+    /// Timestamp of that data
+    pub timestamp: NaiveDateTime,
 }
 
-/// A 3D point in space for 3D camera data
-pub type Point3D = (f32, f32, f32);
-
-impl SendableData {
-    /// Creates a 3D point cloud from random data
-    pub fn fuzz_3d_img(len: usize) -> Self {
-        let mut res = vec![];
-        let mut rng = thread_rng();
-
-        for _ in 0..len {
-            let point = (
-                rng.gen_range(-100f32..100f32),
-                rng.gen_range(-100f32..100f32),
-                rng.gen_range(-100f32..100f32),
-            );
-            res.push(point);
-        }
-
-        Self::PointCloudImage(res)
-    }
+#[derive(Serialize, Deserialize)]
+/// The different representations this handleable data may hold
+pub enum HandleableData {
+    /// Lidar data
+    Lidar(Array2<f64>),
+    /// 3D Image Data
+    Image3D(ndarray::Array<f64, IxDyn>),
+    /// A game command
+    GameCommand(isize),
 }

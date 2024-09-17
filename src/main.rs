@@ -1,18 +1,16 @@
 //! Basic Websocket Connection that can send metadata to all connected clients
 
 use std::sync::Arc;
-use std::time::Duration;
 
-use futures::{executor, SinkExt};
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 
-use oxidize_the_moon::data::SendableData;
+use oxidize_the_moon::data::handler::DataHandler;
+use oxidize_the_moon::data::HandleableData;
 use oxidize_the_moon::server::{ServerService, WebSocketWriteStream};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
-use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::main]
 async fn main() {
@@ -36,7 +34,7 @@ async fn main() {
 
             let io = TokioIo::new(socket);
 
-            let server_service = ServerService::new(tx.clone());
+            let server_service = ServerService::new(tx.clone(), CustomHandler);
 
             tokio::spawn(async move {
                 if let Err(e) = http1::Builder::new()
@@ -56,15 +54,19 @@ async fn main() {
             streams_collector.lock().await.push(msg)
         }
     });
+}
 
-    loop {
-        streams.lock().await.iter_mut().for_each(|stream| {
-            let sample_3d = SendableData::fuzz_3d_img(25);
-            let serialzed_3d = serde_json::to_string(&sample_3d).expect("Serialize to JSON");
-            executor::block_on(stream.send(Message::Text(serialzed_3d)))
-                .expect("Failed to send message to client");
-        });
+/// A placeholder Handler implementation
+pub struct CustomHandler;
 
-        std::thread::sleep(Duration::from_millis(500))
+impl DataHandler for CustomHandler {
+    fn handle(&self, data: oxidize_the_moon::data::Data) {
+        let data_type = match data.data {
+            HandleableData::Lidar(_) => "lidar",
+            HandleableData::Image3D(_) => "3d Image",
+            HandleableData::GameCommand(_) => "Command",
+        };
+
+        println!("{}: {}", data.timestamp, data_type)
     }
 }

@@ -10,14 +10,21 @@ use hyper::{
     Method, StatusCode,
 };
 use hyper::{Request, Response};
-use std::{fs::File, io::Read, pin::Pin};
+use std::{fs::File, io::Read, pin::Pin, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
+use crate::data::{handler::DataHandler, Data};
+
 /// A server service, responsible for sending the Websocket write stream over an mpsc channel
-pub struct ServerService {
+pub struct ServerService<HANDLER>
+where
+    HANDLER: DataHandler + Send + Sync + 'static,
+{
     /// The sender side of an mpsc channel that will handle all websocket write events
     pub sender: UnboundedSender<WebSocketWriteStream>,
+    /// The dynamic data handler for any type of handleable data
+    pub handler: Arc<HANDLER>,
 }
 
 /// An error from attempting to send over a tokio mpsc channel
@@ -26,14 +33,23 @@ pub type TokioMpscError = tokio::sync::mpsc::error::SendError<WebSocketWriteStre
 pub type WebSocketWriteStream =
     SplitSink<WebSocketStream<hyper_util::rt::tokio::TokioIo<Upgraded>>, Message>;
 
-impl ServerService {
+impl<HANDLER> ServerService<HANDLER>
+where
+    HANDLER: DataHandler + Send + Sync + 'static,
+{
     /// Creates a new service around a sender channel
-    pub fn new(tx: UnboundedSender<WebSocketWriteStream>) -> Self {
-        Self { sender: tx }
+    pub fn new(tx: UnboundedSender<WebSocketWriteStream>, handler: HANDLER) -> Self {
+        Self {
+            sender: tx,
+            handler: Arc::new(handler),
+        }
     }
 }
 
-impl Service<Request<body::Incoming>> for ServerService {
+impl<HANDLER> Service<Request<body::Incoming>> for ServerService<HANDLER>
+where
+    HANDLER: DataHandler + Send + Sync + 'static,
+{
     type Response = Response<Full<Bytes>>;
     type Error = hyper::http::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -44,6 +60,7 @@ impl Service<Request<body::Incoming>> for ServerService {
             // Upgrade to WebSocket
             let (response, websocket) =
                 hyper_tungstenite::upgrade(&mut req, None).expect("Error upgrading to WebSocket");
+            let handler = self.handler.clone();
             tokio::spawn(async move {
                 match websocket.await {
                     Ok(ws) => {
@@ -51,8 +68,19 @@ impl Service<Request<body::Incoming>> for ServerService {
                         tx.send(writer)?;
 
                         while let Some(Ok(msg)) = reader.next().await {
-                            // TODO - Respond to websocket messages accordingly
                             match msg {
+                                Message::Text(serialized_string) => {
+                                    let handler_clone = handler.clone();
+                                    tokio::spawn(async move {
+                                        let handleable_data: Data =
+                                            serde_json::from_str(&serialized_string)
+                                                .expect("Failed to parse data as an expected type");
+                                        handler_clone.handle(handleable_data)
+                                    });
+                                }
+                                Message::Binary(_controller) => {
+                                    tokio::spawn(async move {});
+                                }
                                 _ => {}
                             }
                         }
