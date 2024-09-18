@@ -48,12 +48,9 @@ async fn main() {
         }
     });
 
-    let streams_collector = streams.clone();
-    tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            streams_collector.lock().await.push(msg)
-        }
-    });
+    while let Some(msg) = rx.recv().await {
+        streams.lock().await.push(msg)
+    }
 }
 
 /// A placeholder Handler implementation
